@@ -38,11 +38,11 @@ def main():
     args = parse_args()
     launch_time = time.strftime("%Y-%m-%d-%H:%M:%S", time.localtime())
     
-    tokenizer = AutoTokenizer.from_pretrained(args.roberta_data)
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
 
     os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
     
-    logger = Logger(os.path.join(args.log_path, launch_time), cuda=torch.cuda.is_available())
+    logger = Logger(os.path.join(args.log_path, launch_time), cuda=torch.cuda.is_available(), debug=args.vscode_debug)
     
     if args.vscode_debug:
         colossalai.launch(config={},
@@ -108,7 +108,7 @@ def main():
         
         start_epoch = o_l_state_dict['epoch']
         start_shard = o_l_state_dict['shard'] + 1
-        global_step = o_l_state_dict['global_step'] + 1
+        # global_step = o_l_state_dict['global_step'] + 1
         logger.info(f'resume from epoch {start_epoch} shard {start_shard} step {lr_scheduler.last_epoch} lr {lr_scheduler.get_last_lr()[0]}')
     else:
         optimizer = get_optimizer(model, lr=args.lr)
@@ -209,7 +209,7 @@ def main():
         logger.info(f'epoch {epoch} | shard_length {len(os.listdir(args.data_path_prefix))} | elapsed_time: {timers("epoch_time").elapsed() / 60 :.3f} mins' + \
                     f'eval_loss: {eval_loss} | ppl: {math.exp(eval_loss)}')
         logger.info('-' * 100)
-        if args.wandb:
+        if args.wandb and torch.distributed.get_rank() == 0:
             tensorboard_log = get_tensorboard_writer()
             tensorboard_log.log_eval({
                 'all_eval_shard_loss': eval_loss,
