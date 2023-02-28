@@ -15,20 +15,21 @@ mkdir -p $ckpt_path
 
 export PYTHONPATH=$PWD
 
+export CUDA_VISIBLE_DEVICES="4,5,6,7"
 env OMP_NUM_THREADS=40 colossalai run --hostfile ./hostfile \
-                --include GPU002,GPU003,GPU004,GPU007 \
-                --nproc_per_node=8 \
+                --include GPU009 \
+                --nproc_per_node=4 \
                 $PY_FILE_PATH \
-                --master_addr GPU007 \
-                --master_port 20024 \
-                --lr 2.0e-4 \
-                --train_micro_batch_size_per_gpu 190 \
+                --master_addr GPU009 \
+                --master_port 55002 \
+                --lr 5e-5 \
+                --train_micro_batch_size_per_gpu 768 \
                 --eval_micro_batch_size_per_gpu 20 \
                 --epoch 15 \
-                --data_path_prefix /h5 \
-                --eval_data_path_prefix /eval_h5 \
-                --tokenizer_path /roberta \
-                --bert_config /roberta/config.json \
+                --data_path_prefix /data1/yutian.rong/projects/ColossalAI-Examples/data/train_h5 \
+                --eval_data_path_prefix /data1/yutian.rong/projects/ColossalAI-Examples/data/dev_h5 \
+                --tokenizer_path /data1/nlp/models/chinese-roberta-wwm-ext-large \
+                --bert_config /data1/nlp/models/chinese-roberta-wwm-ext-large/config.json \
                 --tensorboard_path $tensorboard_path \
                 --log_path $log_path \
                 --ckpt_path $ckpt_path \
@@ -37,4 +38,5 @@ env OMP_NUM_THREADS=40 colossalai run --hostfile ./hostfile \
                 --mlm bert \
                 --wandb \
                 --checkpoint_activations \
+                --load_pretrain_model /data1/nlp/models/test_model_yutian/pytorch_model.bin \
                 

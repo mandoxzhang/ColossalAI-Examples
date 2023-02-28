@@ -1,21 +1,19 @@
+import collections
 import transformers
-import logging
-from colossalai.nn.lr_scheduler import LinearWarmupLR
-from transformers import get_linear_schedule_with_warmup
-from transformers import BertForPreTraining, RobertaForMaskedLM, RobertaConfig
-from transformers import GPT2Config, GPT2LMHeadModel
-from transformers import AutoTokenizer, AutoModelForMaskedLM
-from colossalai.nn.optimizer import FusedAdam
 
-# from torch.optim import AdamW
-from colossalai.core import global_context as gpc
+from transformers import get_linear_schedule_with_warmup
+
+from apex.optimizers import FusedAdam
+from torch.optim import AdamW
+import torch.distributed as dist
+
 import torch
 import os
 import sys
 
 sys.path.append(os.getcwd())
-from model.deberta_v2 import DebertaV2ForMaskedLM
-from model.bert import BertForMaskedLM
+from model.deberta_v2.modeling_deberta_v2 import DebertaV2ForMaskedLM
+from model.bert.bert_modeling import BertForMaskedLM, BertModel
 import torch.nn as nn
 
 from collections import OrderedDict
@@ -55,33 +53,50 @@ class LMModel(nn.Module):
         )
 
 
-def get_model(args, logger):
+def get_model(args, mlm_model_type, load_pretrain_model, model_config, logger):
 
-    if args.mlm == "bert":
-        config = transformers.BertConfig.from_json_file(args.bert_config)
+    if mlm_model_type == "bert":
+        config = transformers.BertConfig.from_json_file(model_config)
+        # setattr(config, "output_attentions", True)
         model = BertForMaskedLM(config)
-    elif args.mlm == "deberta_v2":
-        config = transformers.DebertaV2Config.from_json_file(args.bert_config)
+    elif mlm_model_type == "deberta_v2":
+        config = transformers.DebertaV2Config.from_json_file(model_config)
         model = DebertaV2ForMaskedLM(config)
     else:
         raise Exception("Invalid mlm!")
 
-    if len(args.load_pretrain_model) > 0:
-        assert os.path.exists(args.load_pretrain_model)
+    if len(load_pretrain_model) > 0:
+        assert os.path.exists(load_pretrain_model)
         # load_checkpoint(args.load_pretrain_model, model, strict=False)
         m_state_dict = torch.load(
-            args.load_pretrain_model,
+            load_pretrain_model,
             map_location=torch.device(f"cuda:{torch.cuda.current_device()}"),
         )
+        new_state_dict = collections.OrderedDict()
+        for k, v in m_state_dict.items():
+            # if "module." in k:
+            #     k = k.replace("module.", "")
+            # if "task_pooler" in k:
+            #     continue
+            # if "classifier" in k:
+            #     continue
+            # if "gamma" in k:
+            #     k = k.replace("gamma", "weight")
+            # elif "beta" in k:
+            #     k = k.replace("beta", "bias")
+            if k.startswith("module."):
+                k = k.replace("module.", "")
+            new_state_dict[k] = v
         # new_state_dict = get_new_state_dict(m_state_dict)
         model.load_state_dict(
-            m_state_dict, strict=True
+            new_state_dict, strict=True
         )  # must insure that every process have identical parameters !!!!!!!
         logger.info("load model success")
 
     numel = sum([p.numel() for p in model.parameters()])
-    model.gradient_checkpointing_enable()
-    # model = LMModel(model, config, args)
+    if args.checkpoint_activations:
+        logger.info("use gradient checkpointing!")
+        model.gradient_checkpointing_enable()
 
     return config, model, numel
 
@@ -105,11 +120,11 @@ def get_optimizer(model, lr):
             "weight_decay": 0.0,
         },
     ]
-    optimizer = FusedAdam(optimizer_grouped_parameters, lr=lr, betas=[0.9, 0.95])
+    optimizer = FusedAdam(optimizer_grouped_parameters, lr=lr, betas=[0.9, 0.999])
     return optimizer
 
 
-def get_lr_scheduler(optimizer, total_steps, warmup_steps=2000, last_epoch=-1):
+def get_lr_scheduler(optimizer, total_steps, warmup_steps=4000, last_epoch=-1):
     # warmup_steps = int(total_steps * warmup_ratio)
     lr_scheduler = get_linear_schedule_with_warmup(
         optimizer,
@@ -131,6 +146,6 @@ def save_ckpt(model, optimizer, lr_scheduler, path, epoch, shard, global_step):
     checkpoint["shard"] = shard
     checkpoint["global_step"] = global_step
     model_state = model.state_dict()  # each process must run model.state_dict()
-    if gpc.get_global_rank() == 0:
+    if dist.get_rank() == 0:
         torch.save(checkpoint, optimizer_lr_path)
         torch.save(model_state, model_path)

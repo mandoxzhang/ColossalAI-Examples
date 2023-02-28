@@ -11,14 +11,15 @@ logger = logging.getLogger(__name__)
 
 
 class Logger:
-    def __init__(self, log_path, cuda=False, debug=False):
+    def __init__(self, log_path, local_rank, cuda=False, debug=False):
         self.logger = logging.getLogger(__name__)
         self.cuda = cuda
+        self.local_rank = local_rank
         self.log_path = log_path
         self.debug = debug
 
     def info(self, message, log_=True, print_=True, *args, **kwargs):
-        if (self.cuda and dist.get_rank() == 0) or not self.cuda:
+        if (self.cuda and self.local_rank in [0, -1]) or not self.cuda:
             if print_:
                 self.logger.info(message, *args, **kwargs)
 

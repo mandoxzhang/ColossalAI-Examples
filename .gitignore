@@ -152,3 +152,16 @@ cython_debug/
 .idea/
 .vscode/
 data/
+language/distillation/tensorboard
+language/distillation/exp_log
+language/distillation/model_config
+language/pretrain_yutian/tensorboard
+language/pretrain_yutian/exp_log
+language/pretrain_yutian/model_config
+language/pretrain_yutian/ckpt
+language/pretrain_yutian/apex
+language/roberta/pretraining/tensorboard
+language/roberta/exp_log
+language/roberta/pretraining/exp_log
+language/roberta/pretraining/ckpt
+nohup.out
